@@ -1,0 +1,532 @@
+
+#.........................## Import Library ##..........................# 
+
+getwd()
+setwd("C://Users//manis//OneDrive//Documents//Project folder")
+library(ggplot2)
+library("zoo")
+library(dplyr)
+library(tidyr)
+library(car)
+library(stats)
+library(corrplot)
+library(caTools)
+library(MLmetrics)
+library('repr')
+
+#...................## Importing data set ##.........................#
+
+wal_data <- read.csv('Walmart_Store_sales.csv')
+View(wal_data)
+
+
+#...................## Check some basic Operations ##...............#
+
+str(wal_data)                                       # Defined the structured of data here we have 6435 observation and 8 variables.
+summary(wal_data)                                   # Defined all basic statistical Operations such as mean,median,quotient etc. 
+sapply(wal_data,function(x) sum(is.na(x)))          # Checking for each columns null values. there is no null values.
+
+
+#...................## Check for which store has maximum sales ##.................#
+
+
+#Aggregating data by 'Store' and Finding sum of 'Weekly_Sales' 
+set.seed(123)
+wal_store_data <- aggregate(Weekly_Sales~Store, data = wal_data,sum)
+View(wal_store_data)
+
+
+#Changing column name of sales 
+colnames(wal_store_data)[2] <- "Total_Sales_by_Store"
+View(wal_store_data)
+
+
+## Shorting Wal_store_data
+wal_store_data <- arrange(wal_store_data,desc(Total_Sales_by_Store))
+View((wal_store_data))
+
+
+#Finding out Store with highest Sales 
+wal_store_data[1,]                             
+
+### Conclusion <-  Store number 20  has maximum sales.
+
+#...............................## Finding standard deviation,coefficient of mean to standard deviation and Variation ##..............................#
+
+# Converting Store column into factor. 
+wal_store_data$Store <- as.character(wal_store_data$Store)
+wal_store_data$Store <- factor(wal_store_data$Store,levels=unique(wal_store_data$Store))
+
+
+#Aggregating data by 'Store' and Finding Standard Deviation of 'Weekly_Sales'
+wal_store_Variation<-summarise(group_by(wal_data,Store),sd(Weekly_Sales), mean(Weekly_Sales))               # We using summaries function from dplyr library 
+
+#Changing column names
+colnames(wal_store_Variation)[2] <- "StandardDeviation_Sales_by_Store"
+colnames(wal_store_Variation)[3] <- "Mean_Sales_by_Store"
+
+#Creating Coefficient of Variation for Sales by Store in Store_Sales_Variation dataframe 
+wal_store_Variation<- mutate(wal_store_Variation,CV_Sales_by_Store = (StandardDeviation_Sales_by_Store/Mean_Sales_by_Store)*100)     # We use mutate function for making new column for coefficient of variable 
+
+
+
+
+
+#...............................## Finding Store with highest Standard deviation ##.................................#
+
+
+#Finding out the row with highest standard deviation 
+wal_store_data_max <-wal_store_Variation[which.max(wal_store_Variation$StandardDeviation_Sales_by_Store), ]               # Row number 14 has the highest Standard deviation
+View(wal_store_data_max)
+
+#printing the output
+print(paste('Store no. ', wal_store_data_max$Store,
+            'has the maximum standard deviation of ', wal_store_data_max$StandardDeviation_Sales_by_Store, 'Coefficient of Variation = ',wal_store_data_max$CV_Sales_by_Store ,'mean sales by store =',wal_store_data_max$Mean_Sales_by_Store ))
+
+#Store with highest variation in Sales - Store 14 & Standard Deviation - 317570, C.V - 5.7137
+
+
+#...........................## Check for which store/s has good quarterly growth rate in Q3’2012 ##.................................................#
+
+
+#Creating new data frame to do alterations. 
+df2<- wal_data
+View(df2)
+
+#Creating a month- year column in new data frame (df2) 
+df2$month_Year = substr(df2$Date, 4, 10)                                  # Here we use substr() function in date column,and taking value from 4 to 10.
+
+
+#Sub-setting Q3-2012 data (i.e, 07-2012,08-2012,09-2012), Q2-2012 data (i.e, 04-2012,05- 2012,06-2012)
+Q3_2012 <- filter(df2,month_Year == "07-2012" | month_Year== "08-2012" | month_Year== "09-2012")
+Q2_2012 <- filter(df2,month_Year == "04-2012" | month_Year== "05-2012" | month_Year== "06-2012")
+
+# Some calculation for finding out Q3-2012 Growth rate values.
+Q3_2012_Sales<-summarise(group_by(Q3_2012,Store),sum(Weekly_Sales))            #Aggregating sales by store for Q3-2012 
+colnames(Q3_2012_Sales)[2] <- "Q3_2012_Sales_by_Store"                         #Changing column names
+Q2_2012_Sales<-summarise(group_by(Q2_2012,Store),sum(Weekly_Sales))            #Aggregating sales by store each Q2-2012 
+colnames(Q2_2012_Sales)[2] <- "Q2_2012_Sales_by_Store"                         #Changing column names
+Q3_2012_Growthrate <- merge ( Q2_2012_Sales , Q3_2012_Sales , by = 'Store')    #merging two quarters data by store
+
+
+#Creating Growth rate column for Sales by Store in the above data frame. 
+Q3_2012_Growthrate <- mutate(Q3_2012_Growthrate, Growth_Rate = ((Q3_2012_Sales_by_Store - Q2_2012_Sales_by_Store)*100) / Q2_2012_Sales_by_Store)
+View(Q3_2012_Growthrate)
+
+
+#Creating only positive growth rates
+positive_growthrate <- filter(Q3_2012_Growthrate, Growth_Rate > 0 ) 
+positive_growthrate <- arrange(positive_growthrate, desc(Growth_Rate)) 
+View(positive_growthrate)
+result <- positive_growthrate$Store
+
+
+#printing the output
+print(paste(c('The positive growth rate Stores are', result),collapse=" " )) 
+print(paste('Store',positive_growthrate[1,1], 'has highest growth rate & it is',positive_growthrate[1,4]))
+
+## Conclusion: (7 16 35 26 39 41 44 24 40 23),stores has good quarterly growth rate in Q3’2012.And Store 7 has highest growth rate.
+
+
+#....................................## Checking for holidays which has a negative impact on sales ##....................................#
+
+# Creating Holidays Data data frame
+# Taking all dates where the all Holiday_Flag is equal to 1.
+Holiday_date <- c("12-02-2010", "11-02-2011", "10-02-2012", "08-02-2013","10-09-2010", "09-09-2011", "07-09-2012", "06-09-2013","26-11-2010", "25-11-2011", "23-11-2012", "29- 11-2013","31-12-2010", "30-12-2011", "28-12-2012", "27-12-2013")
+Events <- c(rep("Super Bowl", 4), rep("Labour Day", 4),rep("Thanksgiving", 4), rep("Christmas", 4))              # we are writing the name of holiday and repeated these names 4 time. 
+Holidays_Data <- data.frame(Events,Holiday_date)
+View(Holidays_Data)
+
+
+# Merging both data frames
+df3 <- merge(df2,Holidays_Data, by.x= "Date", by.y="Holiday_date", all.x = TRUE)                
+
+
+# Replacing null values in Event with No_Holiday. 
+df3$Events <- as.character(df3$Events) 
+df3$Events[is.na(df3$Events)] <- "No_Holiday" 
+View(df3)
+
+
+# Creating data frame the mean of sales for No_Holiday and also mean of sales for different events.
+Holiday_Sales <- aggregate(Weekly_Sales ~ Events, data = df3, mean)
+colnames(Holiday_Sales)[2] <- "Mean_Sales_by_Event_Type"                 #Changing column names
+View(Holiday_Sales)
+
+## Conclusion : Christmas and Labour Day has negative impact on sales. 
+## where as Thanks giving and Super Bowl has positive impact on sales.
+
+
+
+#...................................## Holidays which have higher sales than the mean sales in non-holiday season for all stores together ##..................................................................#
+
+# Checking negative impact based on holiday date and non- holiday date.
+# Filtering holiday dates and finding mean of Weekly Sales. 
+Holiday_date <- filter(df3,Holiday_Flag ==1)
+Holiday_Date_Sales<-summarise(group_by(Holiday_date,Date),mean(Weekly_Sales))
+
+
+# Calculating mean of Weekly Sales for non holidays
+avg_non_holiday_sales <- mean(filter(df3,Holiday_Flag ==0)$Weekly_Sales) 
+Holiday_Date_Sales$higher_than_non_holiday <- Holiday_Date_Sales[,2] > avg_non_holiday_sales
+View(Holiday_Date_Sales)
+
+## Conclusion : Holidays which have higher sales than, 
+## the mean sales in non-holiday season are 07-09-2012, 10-02-2012, 11-02-2011, 12-02-2010, 25-11-2011,26-11-2010.  
+
+
+# Creating data frame for weekly sales with date.
+weekly_sales <- aggregate(Weekly_Sales~Date, data=df2,mean)
+weekly_sales$Date <-as.Date(weekly_sales$Date, "%d-%m-%Y")
+weekly_sales <-arrange(weekly_sales,Date)
+weekly_sales$Date <-factor(weekly_sales$Date)
+View(weekly_sales)
+
+
+
+
+## Plotting chart with ggplot function from ggplot2 library.  
+
+options(repr.plot.width = 14, repr.plot.height = 8)
+
+# plotting weekly mean sales
+d <- ggplot(data=weekly_sales, aes(x=Date, y=Weekly_Sales, group=1)) +
+  geom_line(color="black")+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  scale_x_discrete(breaks = levels(weekly_sales$Date)[c(T, rep(F, 9))])+
+  theme(plot.title = element_text(hjust = 0.5))+
+  xlab("Week") + ylab("Mean Sales of Week")
+d
+
+#Plotting Christmas
+d +ggtitle('CHRISTMAS')+
+  geom_point(aes(x = factor("2010-12-31"), y = 898500.4), color = "blue", size = 2) +
+  geom_point(aes(x = factor("2011-12-30"), y = 1023165.8), color = "blue", size = 2) +
+  geom_hline(aes(yintercept = avg_non_holiday_sales), linetype="dashed")
+
+
+#Plotting Labour day
+d + ggtitle('LABOUR DAY')+
+  geom_point(aes(x = factor("2010-09-10"), y = 1014097.7), color = "red", size = 2) +
+  geom_point(aes(x = factor("2011-09-09"), y = 1039182.8), color = "red", size = 2) +
+  geom_point(aes(x = factor("2012-09-07"), y = 	1074001.3), color = "red", size = 2) +
+  geom_hline(aes(yintercept = avg_non_holiday_sales), linetype="dashed")
+
+
+#Plotting Thanks Giving
+d + ggtitle('THANKS GIVING')+
+  geom_point(aes(x = factor("2010-11-26"), y = 	1462689.0), color = "brown", size = 2) +
+  geom_point(aes(x = factor("2011-11-25"), y = 1479857.9), color = "brown", size = 2) +
+  geom_hline(aes(yintercept = avg_non_holiday_sales), linetype="dashed")
+
+#Plotting Superbowl
+d + ggtitle('SUPER BOWL')+
+  geom_point(aes(x = factor("2010-02-12"), y = 	1074148.4), color = "green", size = 2) +
+  geom_point(aes(x = factor("2011-02-11"), y = 1051915.4), color = "green", size = 2) +
+  geom_point(aes(x = factor("2012-02-10"), y = 1111320.2), color = "green", size = 2)+
+  geom_hline(aes(yintercept = avg_non_holiday_sales), linetype="dashed")
+
+
+
+#Converting date into factor
+x<-as.factor(df2$Date)
+
+#defining what is the original format of  date
+strp_time <-strptime(x,format="%d-%m-%Y") 
+
+#defining what is the desired format of your date
+df2$Mon_Year<-as.Date(strp_time,format="%Y-%m-%d")
+df2$Mon_Year = as.yearmon(df2$Mon_Year)
+
+#Aggregating data by 'Month -Year' and Finding sum of 'Weekly_Sales' and converting it into data frame
+Month_Year_Sales<-summarise(group_by(df2,Mon_Year),sum(Weekly_Sales))
+colnames(Month_Year_Sales)[2] <- "Sales_by_Month"
+Month_Year_Sales<- as.data.frame(Month_Year_Sales)
+
+#Converting year-mon to factor for plotting so that order wont change
+Month_Year_Sales$Mon_Year<- as.character(Month_Year_Sales$Mon_Year)
+Month_Year_Sales$Mon_Year<- factor(Month_Year_Sales$Mon_Year, levels=Month_Year_Sales$Mon_Year)
+
+#plotting line graph as it is time series data
+
+p <- ggplot(data=Month_Year_Sales, aes(x=Mon_Year, y=Sales_by_Month, group=1)) +
+  geom_line(color="blue")+
+  geom_point()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  ggtitle('Monthly Sales - 2010 to 2012')+
+  theme(plot.title = element_text(hjust = 0.5))+
+  xlab("Month") + ylab("Total Sales in a Month")
+p
+
+
+
+#................................................## A monthly and semester view of sales in units ##..............................................#  
+
+#using lubridate
+library(lubridate)
+
+#converting to date format
+df2$Date <- dmy(df2$Date)                     
+View(df2)
+
+
+#creating semester column with year
+df2$semester <- semester(df2$Date, with_year=TRUE)
+
+
+#creating a data frame 'sales' which has total sales for every Semester.
+sales <- aggregate(Weekly_Sales~semester,data=df2, sum)
+
+
+# Adding a new column by Rewriting semester and year to different format.
+sales$semester_year <- paste(substr(sales$semester,1,4),'-S',substr(sales$semester,6,6),sep = '')
+View(sales)
+
+
+#Plotting the graph semester vs Sales
+q <- ggplot(data=sales, aes(x=semester_year, y=Weekly_Sales, group=1)) +
+  geom_line(color="blue")+
+  geom_point()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  ggtitle('Semester Sales - 2010 to 2012')+
+  theme(plot.title = element_text(hjust = 0.5))+
+  xlab("Semester") + ylab("Total Sales in a Semester")
+q
+
+## Conclusion: Semester second in year 2011 (2011-S2) has higher sales and the lowest one is the year 2012 and semester second(2012-S2)
+               
+
+
+
+
+
+#.................................## Done some EDA before building model ##.......................................#
+
+             #..............................## outlier treatment ##..................................................#
+
+#creating same data for alterations
+df4 <- wal_data
+View(df4)
+
+#selecting only first store as prediction Required only for first Store
+df4<- filter(df4, Store ==1)
+
+#changing date column in data frame to date format & arranging in ascending order as per dates
+df4$Date <- dmy(df4$Date)
+df4 <- arrange(df4,Date)
+
+#Creating a week number,month,quarter column in data frame
+df4$Week_Number <- seq(1:length(unique(df4$Date)))
+
+#adding quarter & month columns
+df4$month <- month(df4$Date)
+df4$quarter <- quarter(df4$Date)
+
+View(df4)
+
+#merging both data frames
+df4<-merge(df4,Holidays_Data, by.x= "Date", by.y="Holiday_date", all.x = TRUE)
+
+#Replacing null values in Event with No_Holiday
+df4$Events <- as.character(df4$Events)
+df4$Events[is.na(df4$Events)] <- "No_Holiday"
+
+
+
+#Creating a data frame
+df5 <- df4
+View(df5)
+
+#As we are predicting sales, Thought of removing outliers in Sales based on Various parameters
+
+#Temperature Outlier treatment 
+boxplot(df5$Weekly_Sales ~ cut(df5$Temperature, pretty(df5$Temperature)), main="Temperature vs Weekly Sales", xlab ="Temperature", ylab="Weekly Sales", cex.axis=0.5, col='Blue')
+outliers_temp <- boxplot(df5$Weekly_Sales ~ cut(df5$Temperature, pretty(df5$Temperature)), main="Temperature vs Weekly Sales", cex.axis=0.5,plot=FALSE)$out
+
+#Found 5 outlier and removed them.
+df5<- df5[-which(df5$Weekly_Sales %in% outliers_temp),]
+
+#CPI Outlier treatment
+boxplot(df5$Weekly_Sales ~ cut(df5$CPI, pretty(df5$CPI)), main="CPI vs Weekly Sales",xlab ="CPI", ylab="Weekly Sales", cex.axis=0.5,col="brown")
+outliers_CPI <- boxplot(df5$Weekly_Sales ~ cut(df5$CPI, pretty(df5$CPI)), main="CPI vs Weekly Sales", cex.axis=0.5,plot=FALSE)$out
+
+#Found 1 outlier and removed them
+df5<- df5[-which(df5$Weekly_Sales %in% outliers_CPI),]
+
+#Unemployment outline treatment
+boxplot(df5$Weekly_Sales ~ cut(df5$Unemployment, pretty(df5$Unemployment)), main="Unemployment vs Weekly Sales",xlab ="Unemployment", ylab="Weekly Sales",  cex.axis=0.5,col="yellow")
+outliers_Unemployment <- boxplot(df5$Weekly_Sales ~ cut(df5$Unemployment, pretty(df5$Unemployment)), main="Unemployment vs Weekly Sales", cex.axis=0.5,plot=FALSE)$out
+
+#Found 3 outlier and removed them
+df5<- df5[-which(df5$Weekly_Sales %in% outliers_Unemployment),]
+
+#fuel price outlier treatment 
+boxplot(df5$Weekly_Sales ~ cut(df5$Fuel_Price, pretty(df5$Fuel_Price)), main="Fuel_Price vs Weekly Sales", xlab ="Fuel Price", ylab="Weekly Sales", cex.axis=0.5,col="black")
+outliers_fuel_price <- boxplot(df5$Weekly_Sales ~ cut(df5$Fuel_Price, pretty(df5$Fuel_Price)), main="Fuel_Price vs Weekly Sales", cex.axis=0.5,plot=FALSE)$out
+
+#Found 2 outlines and removed
+data5<- df5[-which(df5$Weekly_Sales %in% outliers_fuel_price),]
+
+#Outlier treatment for Holiday Flag 
+boxplot(df5$Weekly_Sales ~ df5$Holiday_Flag, main = 'Weekly Sales - Holiday_Flag',xlab ="Holiday Flag", ylab="Weekly Sales",col="green" )
+# No outlier found.
+
+
+
+#outlier treatment for month 
+boxplot(data5$Weekly_Sales ~ data5$month, main = 'Weekly Sales - month', xlab ="Month", ylab="Weekly Sales", col="red")
+outliers_month <- boxplot(data5$Weekly_Sales ~ data5$month, main = 'Weekly Sales - month',plot=FALSE)$out
+
+# Found4 outliers  and removed
+df5<- df5[-which(data5$Weekly_Sales %in% outliers_month),]
+
+
+#outlier treatment for quarter 
+outliers_quarter <- boxplot(data5$Weekly_Sales ~ data5$quarter, main = 'Weekly Sales - quarter',xlab ="Quarters", ylab="Weekly Sales", col="pink")$out
+
+# Found 2 outliers and removed
+data5<- data5[-which(data5$Weekly_Sales %in% outliers_quarter),]
+
+
+
+#Removing unnecessary columns and changing structure of Events
+df5$Date <-NULL
+df5$Store <- NULL
+df5$Events <- as.factor(df5$Events)
+str(df5)
+
+df5$Holiday_Flag <- as.numeric(df5$Holiday_Flag)
+df5$Week_Number <- as.numeric(df5$Week_Number)
+df5$quarter <- as.numeric(df5$quarter)
+View(df5)
+
+#correlation matrix and corr plot
+correlation = cor(df5[ , c(1:9)])
+View(correlation)
+corrplot(correlation)
+
+#Creating Dummy Variables 
+# Load the library
+library(fastDummies)
+
+dummy_Events <- dummy_cols(df5$Events)
+
+
+quarter <- as.factor(df5$quarter)
+dummy_quarter <- dummy_cols(df5$quarter)
+
+month <- as.factor(df5$month)
+dummy_month <- dummy_cols(df5$month)
+
+df5 <- cbind(df5,dummy_Events,dummy_quarter,dummy_month)
+
+
+
+#...............................................## Build  prediction models to forecast demand ##......................................................#
+
+#Considering parameters - Weekly Sales, Fuel Price, Week number, Unemployment,Event(categorical), month(categorical)
+#removed Event bowl to Model 6 as it is causing NA's
+
+# Splitting dataset into training set and test set
+set.seed(123) # Seed initializes the randomness -- set.seed helps to fix randomness fixed everytime you open. you can write any number inside the set.seed()
+library(caTools)
+View(df5)
+
+#Considering all parameters - Weekly Sales, Holiday FlagTemp, Fuel, CPI,Unemployment, Weeknumber, Event(categorical), quarter(categorical), month(categorical)
+data_set <- df5[, c(1,2,4,5,6,7,8,9,12,13:30)]
+
+#Creating a sample split and divided test & training sets in 30-70 ratio respectively
+sample = sample.split(data_set, SplitRatio = 0.7) # Returns a vector with T for 70% of data
+training_data = subset(data_set, sample == T)
+test_data = subset(data_set, sample == F)
+
+# Create model 
+model_building = lm(formula = Weekly_Sales ~ . , data = training_data)
+summary(model_building)
+
+library("scales")                                     #for change of scales in data visualization
+library("zoo")
+library("tidyverse")
+
+# Predicting the test data and training data.
+y_pred_train = predict(model_building, newdata = training_data)
+y_pred_test = predict(model_building, newdata = test_data)
+
+
+#................................................## Visualizing training and testing  set results ##..................................................#
+
+options(repr.plot.width = 10, repr.plot.height = 10)
+
+# Visualizing train set results
+ggplot() + 
+  geom_point(aes(x=training_data$Weekly_Sales,y=y_pred_train), size=3,colour = "Blue") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  scale_y_continuous(labels = label_number(suffix = " K", scale = 1e-3))+
+  scale_x_continuous(labels = label_number(suffix = " K", scale = 1e-3))+
+  ggtitle('Comparision of Actual Sales vs Predicted Sales - Train Data')+
+  theme(plot.title = element_text(hjust = 0.5))+
+  xlab("Actual Sales") + ylab("Predicted Sales")
+
+# Visualizing the test set results
+
+ggplot() + 
+  geom_point(aes(x=test_data$Weekly_Sales,y=y_pred_test), size =3, colour = "Blue") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  scale_y_continuous(labels = label_number(suffix = " K", scale = 1e-3))+
+  scale_x_continuous(labels = label_number(suffix = " K", scale = 1e-3))+
+  ggtitle('Comparision of Actual Sales vs Predicted Sales - Test Data')+
+  theme(plot.title = element_text(hjust = 0.5))+
+  xlab("Actual Sales") + ylab("Predicted Sales")
+
+
+### Parameters to validate the accuracy of the model and improvise.
+MAPE(y_pred_test,test_data$Weekly_Sales)
+RMSE(y_pred_test,test_data$Weekly_Sales)
+
+
+#...................................## Building the another model ##..........................................#
+
+# Change dates into days by creating new variable.
+df6 <- df4
+df6$day <- strftime(df6$Date, "%A")              # changing Date into days column 
+view(df6)
+
+# Dummy variable creation.
+dummy_Events <- dummy_cols(df6$Events)
+dummy_days <- dummy_cols(df6$day)
+df6 <- cbind(df6,dummy_days,dummy_Events)
+view(df6)
+
+# Splitting dataset into training set and test set
+set.seed(134) # Seed initializes the randomness -- set.seed helps to fix randomness fixed everytime you open. you can write any number inside the set.seed()
+library(caTools)
+View(df6)
+
+#Considering all parameters - Weekly Sales, Holiday FlagTemp, Fuel, CPI,Unemployment, Weeknumber, Event(categorical), quarter(categorical), month(categorical)
+data <- df6[, c(2:10,15,17)]
+
+#Creating a sample split and divided test & training sets in 30-70 ratio respectively
+sample1 = sample.split(data, SplitRatio = 0.7) # Returns a vector with T for 70% of data
+training = subset(data, sample == T)
+test = subset(data, sample == F)
+
+# Create model 
+model = lm(formula = Weekly_Sales ~ . , data = training)
+summary(model)
+
+library("scales")                                     #for change of scales in data visualization
+library("zoo")
+library("tidyverse")
+
+# Predicting the test data and training data.
+y_pred_train1 = predict(model, newdata = training)
+y_pred_test1 = predict(model, newdata = test)
+
+### Parameters to validate the accuracy of the model and improvise.
+MAPE(y_pred_test1,test$Weekly_Sales)                                # Mean Absolute Percentage Error.
+RMSE(y_pred_test1,test$Weekly_Sales)                                # Root Mean Square Error.
+
+
+## Conclusion : that in first model we have low Mean Absolute Percentage Error and also the Root Mean Square Error is low in comparison to second model
+                ## and also in first model the R-square is 0.555 and in second model the value of R-square is 0.2622
+                ## that means the first model is the best model.
